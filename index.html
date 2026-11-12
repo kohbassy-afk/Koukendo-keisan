@@ -1,1 +1,497 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>貢献度計算ツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+    /* Excelカラー再現 */
+    .cell-input-blue {
+      background-color: #d9f2ff;
+      border: 1.5px solid #38bdf8;
+      transition: all 0.15s ease;
+    }
+    .cell-input-blue:focus-within {
+      background-color: #e0f7ff;
+      border-color: #0284c7;
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+    }
+    .cell-total-yellow {
+      background-color: #fef08a;
+      border: 1.5px solid #eab308;
+    }
+    .cell-rank-orange {
+      background-color: #ffc000;
+      border: 1.5px solid #d97706;
+    }
+    /* 数値入力の矢印を整理 */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="min-h-screen py-6 px-3 sm:px-6">
+  <div class="max-w-5xl mx-auto space-y-5">
+    
+    <!-- ヘッダー -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-sky-600 text-white font-bold text-sm">計</span>
+          <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">貢献度計算ツール</h1>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-500 mt-1">
+          <span class="inline-block w-3 h-3 rounded-sm bg-[#d9f2ff] border border-sky-400 align-middle mr-1"></span>水色のセルに数値を入力するとリアルタイムで計算されます
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="copyResultBtn" class="px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition cursor-pointer">
+          結果をコピー
+        </button>
+        <button id="resetDefaultBtn" class="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer">
+          初期値に戻す
+        </button>
+        <button id="clearAllBtn" class="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 transition cursor-pointer">
+          0クリア
+        </button>
+      </div>
+    </div>
+
+    <!-- メイン計算エリア（左側：ポジション表 / 右側：ボーナス＆判定） -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      
+      <!-- 左側：ポジション別貢献度テーブル (7カラム) -->
+      <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-center border-collapse">
+            <thead>
+              <tr class="bg-slate-100 border-b border-slate-300 text-xs sm:text-sm font-bold text-slate-700">
+                <th class="py-3 px-2 border-r border-slate-200 w-16">ポジション</th>
+                <th class="py-3 px-2 border-r border-slate-200">素の貢献度</th>
+                <th class="py-3 px-2 border-r border-slate-200">レア度（数字）</th>
+                <th class="py-3 px-2 border-r border-slate-200">適正</th>
+                <th class="py-3 px-2 border-r border-slate-200">バッジ</th>
+                <th class="py-3 px-3 bg-slate-200/70 w-24">貢献度</th>
+              </tr>
+            </thead>
+            <tbody id="positionRows" class="divide-y divide-slate-200 text-sm sm:text-base">
+              <!-- JSで5行生成 -->
+            </tbody>
+            <tfoot>
+              <!-- 合計行 (Row 7) -->
+              <tr class="border-t-2 border-slate-400 font-bold bg-slate-50">
+                <td class="py-3 px-2 border-r border-slate-200 text-slate-800">合計</td>
+                <td class="py-2 px-1 border-r border-slate-200 text-[11px] sm:text-xs text-sky-700 font-medium">水色に入力</td>
+                <td class="py-2 px-1 border-r border-slate-200 text-[11px] sm:text-xs text-slate-500 font-medium">星数を入力</td>
+                <td class="py-2 px-1 border-r border-slate-200 text-[11px] sm:text-xs text-slate-500 font-medium">あり＝１</td>
+                <td class="py-2 px-1 border-r border-slate-200 text-[11px] sm:text-xs text-slate-500 font-medium">
+                  あり＝１<br><span class="text-[10px] text-slate-400">＊ナシなら０</span>
+                </td>
+                <td id="totalBaseContrib" class="py-3 px-3 cell-total-yellow text-lg sm:text-xl font-black text-slate-900">
+                  403
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 右側：勝利・ボーナス・累計・判定 (5カラム) -->
+      <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5 space-y-4">
+        <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2">ボーナス・最終判定</h2>
+        
+        <div class="grid grid-cols-12 gap-2.5 items-center text-sm sm:text-base">
+          <!-- 勝利 -->
+          <div class="col-span-6 font-bold text-slate-700 pl-1">勝利 →</div>
+          <div class="col-span-6">
+            <div class="cell-input-blue rounded-lg px-2 py-1.5 flex items-center">
+              <input type="number" id="winCount" min="0" step="1" value="4" class="w-full bg-transparent text-right font-bold text-slate-900 focus:outline-none text-base sm:text-lg" />
+              <span class="text-xs text-slate-500 ml-1.5 shrink-0">勝</span>
+            </div>
+          </div>
+
+          <!-- ボーナス -->
+          <div class="col-span-6 font-bold text-slate-700 pl-1">
+            ボーナス
+            <span class="block text-[11px] font-normal text-slate-400">合計 × 10% × 勝利数</span>
+          </div>
+          <div class="col-span-6">
+            <div class="bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-right font-bold text-slate-800 text-base sm:text-lg" id="winBonusDisplay">
+              161
+            </div>
+          </div>
+
+          <!-- デッキボーナス -->
+          <div class="col-span-6 font-bold text-slate-700 pl-1">デッキボーナス</div>
+          <div class="col-span-6">
+            <div class="cell-input-blue rounded-lg px-2 py-1.5 flex items-center">
+              <input type="number" id="deckBonus" min="0" step="1" value="11" class="w-full bg-transparent text-right font-bold text-slate-900 focus:outline-none text-base sm:text-lg" />
+              <span class="text-xs font-bold text-slate-600 ml-1.5 shrink-0">%</span>
+            </div>
+          </div>
+
+          <!-- プレイヤーボーナス -->
+          <div class="col-span-6 font-bold text-slate-700 pl-1">プレイヤーボーナス</div>
+          <div class="col-span-6">
+            <div class="cell-input-blue rounded-lg px-2 py-1.5 flex items-center">
+              <input type="number" id="playerBonus" min="0" step="1" value="3" class="w-full bg-transparent text-right font-bold text-slate-900 focus:outline-none text-base sm:text-lg" />
+              <span class="text-xs font-bold text-slate-600 ml-1.5 shrink-0">%</span>
+            </div>
+          </div>
+
+          <div class="col-span-12 text-right text-xs text-sky-700 font-medium -mt-1 pr-1">
+            ↑ パーセントを入力
+          </div>
+
+          <!-- 追加分 -->
+          <div class="col-span-6 font-bold text-slate-700 pl-1">
+            追加分
+            <span class="block text-[11px] font-normal text-slate-400">合計 × (デッキ+プレイヤー)%</span>
+          </div>
+          <div class="col-span-6">
+            <div class="bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-right font-bold text-slate-800 text-base sm:text-lg" id="extraBonusDisplay">
+              56
+            </div>
+          </div>
+        </div>
+
+        <hr class="border-slate-200" />
+
+        <!-- 累計 & 判定 -->
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <div class="cell-total-yellow rounded-xl p-3.5 text-center shadow-xs">
+            <div class="text-xs font-bold text-amber-900 mb-1">累計</div>
+            <div id="grandTotalDisplay" class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">620</div>
+          </div>
+          <div class="cell-rank-orange rounded-xl p-3.5 text-center shadow-xs flex flex-col justify-center">
+            <div class="text-xs font-bold text-amber-950 mb-0.5">判定</div>
+            <div id="rankDisplay" class="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight">A</div>
+          </div>
+        </div>
+
+        <!-- ランク基準表 -->
+        <div class="bg-slate-50 rounded-lg p-2.5 border border-slate-200 text-[11px] text-slate-600">
+          <div class="font-bold text-slate-700 mb-1">判定ランク基準（累計）</div>
+          <div class="grid grid-cols-4 sm:grid-cols-7 gap-1 text-center">
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-amber-600">A</span>: 600~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-800">B</span>: 500~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-800">C</span>: 400~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-800">D</span>: 300~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-800">E</span>: 200~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-800">F</span>: 100~</div>
+            <div class="bg-white border border-slate-200 rounded py-1"><span class="font-bold text-slate-500">G</span>: ~99</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 計算内訳プレビュー（Excel A8:D12の内部計算テーブル再現） -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="text-xs sm:text-sm font-bold text-slate-700">ポジション別 計算内訳（内部計算詳細）</h3>
+        <span class="text-[11px] text-slate-500">レア度倍率: ★1・2=×1 / ★3=×1.3 / ★4=×1.7 / ★5=×2（小数切捨）</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-center text-xs sm:text-sm border-collapse">
+          <thead>
+            <tr class="bg-slate-50/70 border-b border-slate-200 text-slate-600">
+              <th class="py-2 px-2 border-r border-slate-200">ポジション</th>
+              <th class="py-2 px-2 border-r border-slate-200">レア度計算後（切捨）</th>
+              <th class="py-2 px-2 border-r border-slate-200">適正ボーナス（+100%）</th>
+              <th class="py-2 px-2 border-r border-slate-200">バッジボーナス（+50%）</th>
+              <th class="py-2 px-2 border-r border-slate-200">素の貢献度</th>
+              <th class="py-2 px-2 font-bold text-slate-800">ポジション貢献度</th>
+            </tr>
+          </thead>
+          <tbody id="breakdownRows" class="divide-y divide-slate-100 text-slate-700">
+            <!-- JSで生成 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg opacity-0 pointer-events-none transition-opacity duration-200">
+    クリップボードにコピーしました
+  </div>
+
+  <script>
+    // 初期データ（アップロードされたExcelの初期値に完全一致）
+    const DEFAULT_DATA = {
+      positions: [
+        { pos: 'PG', base: 34, rarity: 4, fit: 1, badge: 0 },
+        { pos: 'SG', base: 42, rarity: 5, fit: 1, badge: 0 },
+        { pos: 'SF', base: 21, rarity: 3, fit: 1, badge: 0 },
+        { pos: 'PF', base: 27, rarity: 3, fit: 1, badge: 0 },
+        { pos: 'C',  base: 38, rarity: 2, fit: 1, badge: 0 },
+      ],
+      winCount: 4,
+      deckBonus: 11,
+      playerBonus: 3
+    };
+
+    let state = JSON.parse(JSON.stringify(DEFAULT_DATA));
+
+    // ExcelのROUNDDOWN(..., 0)を再現（0方向への切り捨て）
+    function excelRoundDown(num) {
+      return num >= 0 ? Math.floor(num + 1e-9) : Math.ceil(num - 1e-9);
+    }
+
+    // レア度倍率
+    function getRarityMultiplier(rarity) {
+      const r = Number(rarity);
+      if (r === 1 || r === 2) return 1;
+      if (r === 3) return 1.3;
+      if (r === 4) return 1.7;
+      if (r === 5) return 2;
+      return 0;
+    }
+
+    // ランク判定（Excel I8数式再現）
+    function getRank(total) {
+      if (total >= 600) return 'A';
+      if (total >= 500) return 'B';
+      if (total >= 400) return 'C';
+      if (total >= 300) return 'D';
+      if (total >= 200) return 'E';
+      if (total >= 100) return 'F';
+      return 'G';
+    }
+
+    // テーブル行の初回描画
+    function renderTable() {
+      const tbody = document.getElementById('positionRows');
+      tbody.innerHTML = '';
+
+      state.positions.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50/60 transition-colors';
+        tr.innerHTML = `
+          <td class="py-2.5 px-2 border-r border-slate-200 font-bold text-slate-800 bg-slate-50/40">${item.pos}</td>
+          <td class="py-2 px-1.5 border-r border-slate-200">
+            <div class="cell-input-blue rounded-lg px-1.5 py-1">
+              <input type="number" data-idx="${idx}" data-field="base" value="${item.base}" min="0" step="1"
+                class="w-full bg-transparent text-center font-bold text-slate-900 focus:outline-none" />
+            </div>
+          </td>
+          <td class="py-2 px-1.5 border-r border-slate-200">
+            <div class="cell-input-blue rounded-lg px-1 py-1">
+              <select data-idx="${idx}" data-field="rarity"
+                class="w-full bg-transparent text-center font-bold text-slate-900 focus:outline-none cursor-pointer">
+                <option value="1" ${item.rarity == 1 ? 'selected' : ''}>1 (★1)</option>
+                <option value="2" ${item.rarity == 2 ? 'selected' : ''}>2 (★2)</option>
+                <option value="3" ${item.rarity == 3 ? 'selected' : ''}>3 (★3)</option>
+                <option value="4" ${item.rarity == 4 ? 'selected' : ''}>4 (★4)</option>
+                <option value="5" ${item.rarity == 5 ? 'selected' : ''}>5 (★5)</option>
+              </select>
+            </div>
+          </td>
+          <td class="py-2 px-1.5 border-r border-slate-200">
+            <button type="button" data-idx="${idx}" data-toggle="fit"
+              class="cell-input-blue w-full rounded-lg py-1.5 px-2 font-bold text-slate-900 flex items-center justify-center gap-1 cursor-pointer select-none">
+              <span class="text-base">${item.fit}</span>
+              <span class="text-[10px] px-1 rounded ${item.fit === 1 ? 'bg-sky-600 text-white' : 'bg-slate-300 text-slate-600'}">
+                ${item.fit === 1 ? 'あり' : 'ナシ'}
+              </span>
+            </button>
+          </td>
+          <td class="py-2 px-1.5 border-r border-slate-200">
+            <button type="button" data-idx="${idx}" data-toggle="badge"
+              class="cell-input-blue w-full rounded-lg py-1.5 px-2 font-bold text-slate-900 flex items-center justify-center gap-1 cursor-pointer select-none">
+              <span class="text-base">${item.badge}</span>
+              <span class="text-[10px] px-1 rounded ${item.badge === 1 ? 'bg-sky-600 text-white' : 'bg-slate-300 text-slate-600'}">
+                ${item.badge === 1 ? 'あり' : 'ナシ'}
+              </span>
+            </button>
+          </td>
+          <td id="rowContrib-${idx}" class="py-2.5 px-3 font-extrabold text-slate-900 bg-slate-50/70 text-base sm:text-lg">
+            0
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      attachEvents();
+      recalculate();
+    }
+
+    function attachEvents() {
+      document.querySelectorAll('#positionRows input, #positionRows select').forEach(el => {
+        el.addEventListener('input', (e) => {
+          const idx = Number(e.target.dataset.idx);
+          const field = e.target.dataset.field;
+          const val = parseFloat(e.target.value);
+          state.positions[idx][field] = isNaN(val) ? 0 : val;
+          recalculate();
+        });
+      });
+
+      document.querySelectorAll('#positionRows button[data-toggle]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget;
+          const idx = Number(target.dataset.idx);
+          const field = target.dataset.toggle;
+          state.positions[idx][field] = state.positions[idx][field] === 1 ? 0 : 1;
+          renderTable();
+        });
+      });
+    }
+
+    // 全体の再計算（Excel数式と100%同一ロジック）
+    function recalculate() {
+      let f7_sum = 0;
+      const breakdownTbody = document.getElementById('breakdownRows');
+      breakdownTbody.innerHTML = '';
+
+      state.positions.forEach((item, idx) => {
+        const b = Number(item.base) || 0;
+        const c = Number(item.rarity) || 0;
+        const d = Number(item.fit) || 0;
+        const e = Number(item.badge) || 0;
+
+        // A8:A12 -> ROUNDDOWN(B * mult, 0)
+        const rarityPart = excelRoundDown(b * getRarityMultiplier(c));
+        // B8:B12 -> IF(D=1, B*1, B*0)
+        const fitPart = d === 1 ? b * 1 : 0;
+        // C8:C12 -> IF(E=1, B*0.5, B*0) ※Excel通り切り捨てせず合算
+        const badgePart = e === 1 ? b * 0.5 : 0;
+        // F2:F6 -> SUM(A8:C8)
+        const rowTotal = rarityPart + fitPart + badgePart;
+
+        f7_sum += rowTotal;
+
+        const rowCell = document.getElementById(`rowContrib-${idx}`);
+        if (rowCell) {
+          rowCell.textContent = Number.isInteger(rowTotal) ? rowTotal : rowTotal.toFixed(1);
+        }
+
+        // 内訳行の追加
+        const bTr = document.createElement('tr');
+        bTr.innerHTML = `
+          <td class="py-1.5 px-2 border-r border-slate-200 font-bold">${item.pos}</td>
+          <td class="py-1.5 px-2 border-r border-slate-200">${rarityPart}</td>
+          <td class="py-1.5 px-2 border-r border-slate-200">${fitPart}</td>
+          <td class="py-1.5 px-2 border-r border-slate-200">${badgePart}</td>
+          <td class="py-1.5 px-2 border-r border-slate-200 text-slate-400">${b}</td>
+          <td class="py-1.5 px-2 font-bold text-slate-900">${rowTotal}</td>
+        `;
+        breakdownTbody.appendChild(bTr);
+      });
+
+      // F7: 合計
+      document.getElementById('totalBaseContrib').textContent = Number.isInteger(f7_sum) ? f7_sum : f7_sum.toFixed(1);
+
+      // I1: 勝利, I3: デッキボーナス, I4: プレイヤーボーナス
+      const i1 = Number(state.winCount) || 0;
+      const i3 = Number(state.deckBonus) || 0;
+      const i4 = Number(state.playerBonus) || 0;
+
+      // I2: ボーナス = ROUNDDOWN(F7*0.1*I1, 0)
+      const i2 = excelRoundDown(f7_sum * 0.1 * i1);
+      // I6: 追加分 = ROUNDDOWN((I3+I4)/100*F7, 0)
+      const i6 = excelRoundDown(((i3 + i4) / 100) * f7_sum);
+      // E9: ROUNDDOWN(F7+I2+I6, 0)
+      const e9 = excelRoundDown(f7_sum + i2 + i6);
+      // I7: 累計 = IF(E9>0, E9, 1)
+      const i7 = e9 > 0 ? e9 : 1;
+      // I8: 判定
+      const rank = getRank(i7);
+
+      document.getElementById('winBonusDisplay').textContent = i2;
+      document.getElementById('extraBonusDisplay').textContent = i6;
+      document.getElementById('grandTotalDisplay').textContent = i7;
+      document.getElementById('rankDisplay').textContent = rank;
+    }
+
+    // 右側入力欄のイベント
+    document.getElementById('winCount').addEventListener('input', (e) => {
+      state.winCount = parseFloat(e.target.value) || 0;
+      recalculate();
+    });
+    document.getElementById('deckBonus').addEventListener('input', (e) => {
+      state.deckBonus = parseFloat(e.target.value) || 0;
+      recalculate();
+    });
+    document.getElementById('playerBonus').addEventListener('input', (e) => {
+      state.playerBonus = parseFloat(e.target.value) || 0;
+      recalculate();
+    });
+
+    // 初期値リセット
+    document.getElementById('resetDefaultBtn').addEventListener('click', () => {
+      state = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      document.getElementById('winCount').value = state.winCount;
+      document.getElementById('deckBonus').value = state.deckBonus;
+      document.getElementById('playerBonus').value = state.playerBonus;
+      renderTable();
+      showToast('Excelの初期値に戻しました');
+    });
+
+    // 0クリア
+    document.getElementById('clearAllBtn').addEventListener('click', () => {
+      state.positions.forEach(p => {
+        p.base = 0;
+        p.rarity = 1;
+        p.fit = 0;
+        p.badge = 0;
+      });
+      state.winCount = 0;
+      state.deckBonus = 0;
+      state.playerBonus = 0;
+      document.getElementById('winCount').value = 0;
+      document.getElementById('deckBonus').value = 0;
+      document.getElementById('playerBonus').value = 0;
+      renderTable();
+      showToast('すべての数値をクリアしました');
+    });
+
+    // 結果コピー
+    document.getElementById('copyResultBtn').addEventListener('click', () => {
+      const f7 = document.getElementById('totalBaseContrib').textContent;
+      const i2 = document.getElementById('winBonusDisplay').textContent;
+      const i6 = document.getElementById('extraBonusDisplay').textContent;
+      const i7 = document.getElementById('grandTotalDisplay').textContent;
+      const rank = document.getElementById('rankDisplay').textContent;
+
+      const lines = [
+        '【貢献度計算結果】',
+        ...state.positions.map((p, idx) => {
+          const cVal = document.getElementById(`rowContrib-${idx}`).textContent;
+          return `${p.pos}: ${cVal} (素:${p.base} / ★${p.rarity} / 適正:${p.fit} / バッジ:${p.badge})`;
+        }),
+        `合計貢献度: ${f7}`,
+        `勝利ボーナス(${state.winCount}勝): +${i2}`,
+        `追加分(デッキ${state.deckBonus}%+プレイヤー${state.playerBonus}%): +${i6}`,
+        `累計: ${i7} 【判定: ${rank}】`
+      ];
+
+      navigator.clipboard.writeText(lines.join('\n')).then(() => {
+        showToast('計算結果をクリップボードにコピーしました');
+      });
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0');
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+      }, 2200);
+    }
+
+    // 初期レンダリング
+    renderTable();
+  </script>
+</body>
+</html>
 
